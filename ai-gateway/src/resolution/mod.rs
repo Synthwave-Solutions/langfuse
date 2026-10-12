@@ -208,11 +208,10 @@ impl ControlPlaneClient {
             200 => {}
             400 => return Err(ResolutionError::InvalidRequest),
             401 => return Err(ResolutionError::Authentication),
-            403
-                if response
-                    .headers()
-                    .get(ERROR_CODE_HEADER)
-                    .is_some_and(|value| value == "model_not_allowed") =>
+            403 if response
+                .headers()
+                .get(ERROR_CODE_HEADER)
+                .is_some_and(|value| value == "model_not_allowed") =>
             {
                 return Err(ResolutionError::ModelNotAllowed);
             }
