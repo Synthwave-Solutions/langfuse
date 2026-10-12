@@ -4,6 +4,7 @@ import {
   type EarlyOtelBatch,
   type ExtractedOtelMedia,
 } from "@langfuse/native";
+import * as otelMediaUploads from "../../../../packages/shared/src/server/media/otelMediaUploads";
 
 const mocks = vi.hoisted(() => {
   const span = { setAttributes: vi.fn() };
@@ -22,8 +23,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@langfuse/shared/src/server", async () => ({
-  ...(await import("../../../../packages/shared/src/server/media/otelMediaUploads")),
+vi.mock("@langfuse/shared/src/server", () => ({
+  ...otelMediaUploads,
   getClickhouseEntityType: (eventType: string) =>
     eventType === "trace-create" ? "trace" : "observation",
   instrumentAsync: mocks.instrumentAsync,
