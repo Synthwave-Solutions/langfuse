@@ -1,0 +1,40 @@
+name: SynthPulse Pi langfuse
+on:
+  workflow_dispatch:
+  push:
+    branches: [synthpulse-pi]
+permissions:
+  contents: write
+concurrency:
+  group: synthpulse-pi
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build own langfuse from own source
+        run: |
+          docker build --platform linux/arm64 -f web/Dockerfile -t synthpulse-langfuse-pi:${GITHUB_SHA} .
+          docker build --platform linux/arm64 -f worker/Dockerfile -t synthpulse-langfuse-worker-pi:${GITHUB_SHA} .
+      - name: Validate and archive
+        run: |
+          test "$(docker image inspect synthpulse-langfuse-pi:${GITHUB_SHA} --format '{{.Architecture}}')" = arm64
+          mkdir -p pi-release
+          docker save synthpulse-langfuse-pi:${GITHUB_SHA} synthpulse-langfuse-worker-pi:${GITHUB_SHA} | gzip > pi-release/synthpulse-langfuse-arm64.tar.gz
+          python3 - <<'BUILD'
+          import json,os,pathlib,hashlib
+          p=pathlib.Path('pi-release');f=p/'synthpulse-langfuse-arm64.tar.gz';h=hashlib.file_digest(f.open('rb'),'sha256').hexdigest()
+          data={'repository':os.environ['GITHUB_REPOSITORY'],'commit':os.environ['GITHUB_SHA'],'run':os.environ['GITHUB_RUN_ID'],'architecture':'arm64','hardware_tested':False,'image':'synthpulse-langfuse-pi:'+os.environ['GITHUB_SHA'],'worker_image':'synthpulse-langfuse-worker-pi:'+os.environ['GITHUB_SHA'],'sha256':{f.name:h}}
+          (p/'provenance.json').write_text(json.dumps(data,indent=2)+'\n')
+          (p/'SHA256SUMS').write_text(h+'  '+f.name+'\n')
+          BUILD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthpulse-langfuse-pi
+          path: pi-release/
+      - name: Publish own prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create --repo "$GITHUB_REPOSITORY" "synthpulse-pi-${GITHUB_RUN_NUMBER}" pi-release/* --target "$GITHUB_SHA" --prerelease --title "SynthPulse langfuse - Raspberry Pi" --notes "ARM64 image built from our customised langfuse fork. No production credentials or state. Account onboarding and physical Pi test pending."
