@@ -10,6 +10,8 @@ import {
   providerSupportsApiFormat,
 } from "@/src/features/ai-gateway/server/provider/registry";
 import { parseGatewayModelSlug } from "@/src/features/ai-gateway/fns/gatewayModelSlug";
+import { isGatewayModelAllowed } from "@/src/features/ai-gateway/fns/isGatewayModelAllowed";
+import { normalizeGatewayAllowedModels } from "@/src/features/ai-gateway/fns/normalizeGatewayAllowedModels";
 import {
   type CachedResolveContext,
   GATEWAY_RESOLVE_KEY_NON_EXISTENT,
@@ -69,15 +71,28 @@ export class GatewayApiKeyAuthenticator {
         403,
       );
     }
+    const providerModel = modelSlug?.providerModel ?? null;
+    const connection =
+      (modelSlug
+        ? context.connections.find(
+            (candidate) => candidate.name === modelSlug.connectionName,
+          )
+        : context.connections[0]) ?? null;
+    if (
+      connection &&
+      providerModel &&
+      !isGatewayModelAllowed(connection.allowedModels, providerModel)
+    ) {
+      throw new GatewayControlPlaneError(
+        "Model is not allowed for this provider connection",
+        403,
+        "model_not_allowed",
+      );
+    }
     return {
       ...context,
-      providerModel: modelSlug?.providerModel ?? null,
-      connection:
-        (modelSlug
-          ? context.connections.find(
-              (connection) => connection.name === modelSlug.connectionName,
-            )
-          : context.connections[0]) ?? null,
+      providerModel,
+      connection,
     };
   }
 
@@ -115,7 +130,10 @@ export class GatewayApiKeyAuthenticator {
         ? (gatewayConfig?.defaultIngestionProjectId ?? null)
         : null,
       ingestionMode: gatewayConfig?.ingestionMode ?? null,
-      connections: organization.gatewayAiConnections,
+      connections: organization.gatewayAiConnections.map((connection) => ({
+        ...connection,
+        allowedModels: normalizeGatewayAllowedModels(connection.allowedModels),
+      })),
     };
 
     await this.cache.set({

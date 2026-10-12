@@ -19,6 +19,7 @@ use std::{
 
 const RESOLVE_PATH: &str = "/api/internal/ai-gateway/v1/resolve";
 const REQUEST_ID_HEADER: &str = "langfuse-gateway-request-id";
+const ERROR_CODE_HEADER: &str = "langfuse-gateway-error-code";
 // Web sits behind load balancers that drop idle connections after 60s by default
 // (AWS ALB). Evicting pooled connections first keeps the resolver from sending on a
 // socket the balancer is closing, which would fail without a retry.
@@ -207,6 +208,14 @@ impl ControlPlaneClient {
             200 => {}
             400 => return Err(ResolutionError::InvalidRequest),
             401 => return Err(ResolutionError::Authentication),
+            403
+                if response
+                    .headers()
+                    .get(ERROR_CODE_HEADER)
+                    .is_some_and(|value| value == "model_not_allowed") =>
+            {
+                return Err(ResolutionError::ModelNotAllowed);
+            }
             403 => return Err(ResolutionError::Forbidden),
             404 => return Err(ResolutionError::NoRoute),
             429 | 500..=599 => return Err(ResolutionError::Unavailable),
@@ -246,6 +255,7 @@ pub enum ResolutionError {
     InvalidRequest,
     Authentication,
     Forbidden,
+    ModelNotAllowed,
     NoRoute,
     Unavailable,
     Timeout,
@@ -262,6 +272,7 @@ impl fmt::Display for ResolutionError {
             Self::InvalidRequest => "invalid gateway request",
             Self::Authentication => "gateway authentication failed",
             Self::Forbidden => "gateway access forbidden",
+            Self::ModelNotAllowed => "model is not allowed",
             Self::NoRoute => "no eligible connection",
             Self::Unavailable => "resolution unavailable",
             Self::Timeout => "resolution deadline exceeded",
