@@ -114,6 +114,7 @@ import { SessionDetailStoreProvider } from "@/src/features/sessions/SessionDetai
 import { SessionVirtualizedRow } from "@/src/features/sessions/SessionVirtualizedRow";
 import { createSessionDetailStore } from "@/src/features/sessions/sessionDetailStore";
 import { ModernSession } from "@/src/features/sessions/ModernSession";
+import { SessionRedesignBanner } from "@/src/features/sessions/SessionRedesignBanner";
 import { HeaderActionMenuRow } from "@/src/components/HeaderActionMenuRow";
 import { ModernSessionHeaderActionsController } from "@/src/features/sessions/ModernSessionHeaderActionsController";
 import { ConnectedSessionAddToDropdownMenuController } from "@/src/features/sessions/ConnectedSessionAddToDropdownMenuController";
@@ -1101,6 +1102,12 @@ const LoadedSessionEventsPage: React.FC<{
     enableForAdmins: false,
     projectId,
   });
+  const [isRedesignBannerDismissed, setIsRedesignBannerDismissed] =
+    useLocalStorage("sessionRedesignBannerDismissed", false);
+  const showRedesignBanner =
+    isModernSessionEnabled &&
+    isSessionTimelineEnabled &&
+    !isRedesignBannerDismissed;
   const isMobile = useIsMobile();
   const openAnnotateRef = useRef<(payload: SessionAnnotatePayload) => void>(
     () => {},
@@ -2001,6 +2008,11 @@ const LoadedSessionEventsPage: React.FC<{
                   : "flex h-full flex-col overflow-auto"
               }
             >
+              {showRedesignBanner ? (
+                <SessionRedesignBanner
+                  onDismiss={() => setIsRedesignBannerDismissed(true)}
+                />
+              ) : null}
               {!isModernSessionEnabled && hasSessionControls ? (
                 <SessionControlsBar
                   isMobile={isMobile && !isModernSessionEnabled}
@@ -2129,6 +2141,7 @@ const LoadedSessionEventsPage: React.FC<{
                 </div>
               ) : (
                 <ModernSession
+                  headerDividerTone={showRedesignBanner ? "orange" : "default"}
                   isTimelineEnabled={isSessionTimelineEnabled}
                   session={session}
                   tracesState={
