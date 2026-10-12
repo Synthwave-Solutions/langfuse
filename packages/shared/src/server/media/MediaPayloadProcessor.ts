@@ -1,4 +1,5 @@
 import { isMediaContentType, type MediaContentType } from "../../domain/media";
+import { forEachMedia, mapMedia } from "./otelMediaUploads";
 
 const MAX_RECURSION_DEPTH = 10;
 const DATA_URI_PREFIX = "data:";
@@ -207,11 +208,16 @@ async function replaceDataUris(
   const occurrences = findDataUris(value);
   if (occurrences.length === 0) return { value, bytesRemoved: 0 };
 
+  const replacements = await mapMedia(occurrences, async (occurrence) =>
+    occurrence.status === "valid"
+      ? params.processCandidate(occurrence.candidate)
+      : undefined,
+  );
   let output = "";
   let cursor = 0;
   let bytesRemoved = 0;
 
-  for (const occurrence of occurrences) {
+  for (const [index, occurrence] of occurrences.entries()) {
     const original = value.slice(occurrence.start, occurrence.end);
     output += value.slice(cursor, occurrence.start);
     if (occurrence.status === "invalid") {
@@ -221,9 +227,7 @@ async function replaceDataUris(
       params.onIgnoredCandidate("data_uri", occurrence.reason);
       output += original;
     } else {
-      const resolvedReplacement = await params.processCandidate(
-        occurrence.candidate,
-      );
+      const resolvedReplacement = replacements[index];
       output += resolvedReplacement ?? original;
       if (resolvedReplacement) {
         bytesRemoved += Math.max(
@@ -535,7 +539,7 @@ async function transformStructuredValue(
   if (recordStructuredPath) {
     params.onDetectionPath("structured_payload", state.checkedBytes);
   }
-  for (const operation of operations) await operation();
+  await forEachMedia(operations, (operation) => operation());
   return state;
 }
 

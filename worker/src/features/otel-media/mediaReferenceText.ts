@@ -1,4 +1,5 @@
 import type { EarlyOtelBatch, ExtractedOtelMedia } from "@langfuse/native";
+import { mapMedia, forEachMedia } from "@langfuse/shared/src/server";
 
 export type MediaRegistry = ReadonlyMap<string, ExtractedOtelMedia>;
 
@@ -74,10 +75,15 @@ export function createMediaReferenceRewriter(
     resolve?: (entry: ExtractedOtelMedia) => Promise<string | undefined>,
   ): Promise<string> => {
     let layers: Map<number, number> | undefined;
+    const matches = [...knownMediaReferenceMatches(value, media)];
+    if (matches.length === 0) return value;
+    const replacements = resolve
+      ? await mapMedia(matches, (match) => resolve(match.entry))
+      : [];
     let output = "";
     let end = 0;
-    for (const match of knownMediaReferenceMatches(value, media)) {
-      let replacement = await resolve?.(match.entry);
+    for (const [index, match] of matches.entries()) {
+      let replacement = replacements[index];
       if (replacement === undefined) {
         if (layers === undefined)
           layers = serializedReferenceLayers(value, media);
@@ -101,10 +107,12 @@ export function createMediaReferenceRewriter(
  * Rewrite actual object values in place. Actual object keys are not visited;
  * opaque string values are rewritten as source text, including JSON keys
  * contained inside those strings.
+ * Concurrent rewriting requires an owned JSON tree without shared object nodes.
  */
 export async function rewriteMediaValues(
   value: unknown,
   rewrite: (text: string) => Promise<string>,
+  concurrent = false,
 ): Promise<unknown> {
   if (typeof value === "string") return rewrite(value);
   if (typeof value !== "object" || value === null) return value;
@@ -126,21 +134,36 @@ export async function rewriteMediaValues(
     });
   };
   push(value);
-  while (stack.length > 0) {
-    const frame = stack[stack.length - 1]!;
-    if (frame.next === frame.length) {
-      stack.pop();
-      continue;
-    }
-    const index = frame.next++;
-    const key = frame.keys ? frame.keys[index]! : index;
-    const current = frame.object[key];
-    if (typeof current === "string") {
-      setObjectValue(frame.object, key, current, await rewrite(current));
-    } else if (typeof current === "object" && current !== null) {
-      push(current);
+  function* strings() {
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1]!;
+      if (frame.next === frame.length) {
+        stack.pop();
+        continue;
+      }
+      const index = frame.next++;
+      const key = frame.keys ? frame.keys[index]! : index;
+      const current = frame.object[key];
+      if (typeof current === "string") {
+        yield { object: frame.object, key, current };
+      } else if (typeof current === "object" && current !== null) {
+        push(current);
+      }
     }
   }
+  const replace = async ({
+    object,
+    key,
+    current,
+  }: {
+    object: Record<string, unknown>;
+    key: string | number;
+    current: string;
+  }) => {
+    setObjectValue(object, key, current, await rewrite(current));
+  };
+  if (concurrent) await forEachMedia(strings(), replace);
+  else for (const entry of strings()) await replace(entry);
   return value;
 }
 
