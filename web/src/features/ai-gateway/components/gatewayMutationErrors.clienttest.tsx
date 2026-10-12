@@ -210,6 +210,7 @@ const testConnection: GatewayConnection = {
   displaySecret: "sk-...abcd",
   createdById: "user-1",
   routingPriority: 0,
+  allowedModels: null,
   createdAt: new Date("2026-09-04T12:00:00.000Z"),
   updatedAt: new Date("2026-09-04T12:00:00.000Z"),
 };
